@@ -34,7 +34,7 @@ muzik_turleri = [
 ]
 
 # --- ARAYÜZ ---
-st.title("👑 Kralın Müzik Fabrikası v2")
+st.title("AI Müzik Fabrikası")
 st.markdown("---")
 
 # Yan Menü: İlham Butonu
@@ -84,4 +84,5 @@ with col2:
         st.info("👈 Ayarları yapıp butona basın.")
 
 # Kod Sonu - Burayı da kopyaladığınızdan emin olun
+
 
