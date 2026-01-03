@@ -42,7 +42,7 @@ with st.sidebar:
     st.header("🎭 İlham Köşesi")
     if st.button("🎲 Rastgele Tarz Öner"):
         rastgele_tur = random.choice(muzik_turleri)
-        st.success(f"Kralım: **{rastgele_tur}**")
+        st.success(f"Rastgele Müzik Türü: **{rastgele_tur}**")
     st.markdown("---")
     st.info("Bu sistem AI ile güçlendirilmiştir.")
 
@@ -84,3 +84,4 @@ with col2:
         st.info("👈 Ayarları yapıp butona basın.")
 
 # Kod Sonu - Burayı da kopyaladığınızdan emin olun
+
