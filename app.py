@@ -4,11 +4,11 @@ import os
 import time
 from dotenv import load_dotenv
 
-# Malith's Suno-API (en stabil paket)
+# Suno-AI PyPI paketi (daha stabil)
 try:
-    from suno import Suno, ModelVersions
+    from SunoAI import Client as SunoClient
 except ImportError:
-    st.error("⚠️ 'suno-api' paketi yüklü değil. requirements.txt'e ekleyin: git+https://github.com/Malith-Rukshan/Suno-API.git")
+    st.error("⚠️ 'SunoAI' paketi yüklü değil. requirements.txt'e ekleyin: SunoAI>=0.0.5")
     st.stop()
 
 # Sayfa Ayarları
@@ -49,11 +49,8 @@ def get_suno_client():
     if not suno_cookie:
         return None
     try:
-        # FULL Cookie string kullan (sadece __client değil!)
-        client = Suno(
-            cookie=suno_cookie,
-            model_version=ModelVersions.CHIRP_V3_5
-        )
+        # SunoAI PyPI paketi
+        client = SunoClient(cookie=suno_cookie)
         return client
     except Exception as e:
         st.error(f"Suno client hatası: {e}")
@@ -73,9 +70,9 @@ with st.sidebar:
             test_client = get_suno_client()
             if test_client:
                 try:
-                    # Kredi kontrolü
-                    limit = test_client.get_limit_left()
-                    st.success(f"✅ Bağlı | Kalan kredi: {limit}")
+                    # Basit test
+                    info = test_client.get_credits()
+                    st.success(f"✅ Bağlı | Kredi: {info}")
                 except Exception as e:
                     st.warning(f"⚠️ Cookie sorunlu: {str(e)[:100]}")
                     st.info("👉 Cookie'yi Network sekmesinden al (tüm satır)")
@@ -147,35 +144,26 @@ Output only Turkish lyrics."""
                     suno_prompt = f"{tur} song in Turkish. {vokal} vocals. About: {konu}"
                     song_title = baslik or f"{tur} - {konu[:30]}"
                     
-                    # Şarkı oluştur (GPT mode)
+                    # Şarkı oluştur
                     with st.spinner("🎼 Üretiliyor..."):
-                        clips = client.generate(
+                        result = client.songs.generate(
                             prompt=suno_prompt,
-                            is_custom=False,  # GPT otomatik mod
-                            wait_audio=True   # Tamamlanana kadar bekle
+                            is_custom=False,
+                            wait_audio=True
                         )
                     
-                    if clips and len(clips) > 0:
-                        clip = clips[0]
+                    if result and len(result) > 0:
+                        clip = result[0]
                         
-                        st.success(f"🎉 Şarkı hazır! ID: {clip.id}")
+                        st.success(f"🎉 Şarkı hazır! ID: {clip['id']}")
                         
                         # Ses çalıcı
-                        if clip.audio_url:
-                            st.audio(clip.audio_url, format="audio/mp3")
+                        audio_url = clip.get('audio_url')
+                        if audio_url:
+                            st.audio(audio_url, format="audio/mp3")
                             
                             # İndirme
-                            try:
-                                audio_data = client.download(clip_id=clip.id)
-                                st.download_button(
-                                    label="⬇️ MP3 İndir",
-                                    data=audio_data,
-                                    file_name=f"{song_title}.mp3",
-                                    mime="audio/mp3"
-                                )
-                            except:
-                                st.warning("İndirme başarısız, direkt link kullan")
-                                st.markdown(f"[🔗 İndir]({clip.audio_url})")
+                            st.markdown(f"[⬇️ MP3 İndir]({audio_url})")
                             
                             st.balloons()
                         else:
