@@ -1,88 +1,106 @@
 import streamlit as st
 import google.generativeai as genai
 import os
-import random
+import time
 from dotenv import load_dotenv
 
 # 1. Sayfa Ayarları
-st.set_page_config(page_title="Music Producer AI", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="SongAI - Kişiye Özel Müzik", page_icon="🎵", layout="wide")
 
-# 2. Şifre (API KEY) Kontrolü
+# 2. API Anahtarı
 api_key = st.secrets["GEMINI_API_KEY"] if "GEMINI_API_KEY" in st.secrets else (load_dotenv() or os.getenv("GEMINI_API_KEY"))
 
 try:
-    if not api_key:
-        st.error("⚠️ API Anahtarı Bulunamadı!")
-        st.stop()
     genai.configure(api_key=api_key)
-    def model_bul():
-        try:
-            for m in genai.list_models():
-                if 'flash' in m.name: return m.name
-            return "models/gemini-pro"
-        except: return "models/gemini-pro"
-    model = genai.GenerativeModel(model_bul())
-except Exception as e:
-    st.error(f"Bağlantı Hatası: {e}"); st.stop()
+    model = genai.GenerativeModel("gemini-1.5-flash")
+except:
+    st.error("⚠️ Sistem Bakımda (API Key Hatası)")
+    st.stop()
 
-# --- MÜZİK KÜTÜPHANESİ ---
-muzik_turleri = [
-    "Turkish Pop", "Anatolian Rock", "Deep House", "Arabesk Rap", "Cinematic Orchestral", 
-    "K-Pop Arabesk", "Synthwave (80s)", "Lo-Fi Hip Hop", "Symphonic Metal", "Jazz Fusion", 
-    "Techno Tribal", "Neo-Classical", "Reggaeton", "Country Folk", "Cyberpunk Industrial",
-    "Phonk", "Disco Nostalgia", "R&B Soul", "Hardstyle", "Acoustic Ballad"
-]
+# --- REKLAM ALANLARI (HTML) ---
+google_ads_html = """
+<div style="background-color:#f0f0f0; padding:20px; text-align:center; border:1px dashed #ccc; margin-bottom:10px;">
+    <p style="color:#888; font-size:12px;">REKLAM ALANI (Google Ads)</p>
+    <h4>Buraya Müzik Ekipmanı Reklamı Gelecek</h4>
+</div>
+"""
 
 # --- ARAYÜZ ---
-st.title("AI Müzik Fabrikası")
+st.title("🎵 SongAI: Hayalindeki Şarkıyı Yarat")
+st.markdown("**Sadece Nakaratı Dinle, Beğenirsen Satın Al!**")
 st.markdown("---")
 
-# Yan Menü: İlham Butonu
+# Yan Menü: Reklam ve İletişim
 with st.sidebar:
-    st.header("🎭 İlham Köşesi")
-    if st.button("🎲 Rastgele Tarz Öner"):
-        rastgele_tur = random.choice(muzik_turleri)
-        st.success(f"Rastgele Müzik Türü: **{rastgele_tur}**")
-    st.markdown("---")
-    st.info("Bu sistem AI ile güçlendirilmiştir.")
+    st.header("📢 Sponsorlar")
+    st.markdown(google_ads_html, unsafe_allow_html=True)
+    st.markdown(google_ads_html, unsafe_allow_html=True)
+    st.info("💡 Kurumsal Jingle ve Marka Müzikleri için bizimle iletişime geçin.")
 
-col1, col2 = st.columns([1, 1])
+col1, col2 = st.columns([1, 1.5])
 
 with col1:
-    st.subheader("1. Tasarım Paneli")
-    konu = st.text_area("Şarkı Konusu Nedir?", "Geleceğin dünyasında son bir dans...", height=100)
+    st.subheader("🎹 Stüdyo Paneli")
+    konu = st.text_area("Şarkı kime/neye özel olsun?", "Sevgilim Ayşe için romantik bir doğum günü şarkısı...", height=100)
+    tur = st.selectbox("Müzik Tarzı", ["Turkish Pop", "Slow & Damar", "Rap & Drill", "Anatolian Rock", "Deep House", "K-Pop", "Lo-Fi"])
+    vokal = st.selectbox("Vokal", ["Erkek", "Kadın", "Düet"])
     
-    c1, c2 = st.columns(2)
-    with c1:
-        tur = st.selectbox("Müzik Tarzı", muzik_turleri)
-    with c2:
-        vokal = st.selectbox("Vokal", ["Male Vocals", "Female Vocals", "Duet", "High-Pitch", "Deep Bass"])
-        
-    hiz = st.select_slider("Tempo", options=["Slow", "Mid", "Fast", "Very Fast"])
-    btn = st.button("✨ Şarkıyı İnşa Et", use_container_width=True)
+    st.markdown("---")
+    st.caption("Fiyatlandırma:")
+    st.success("🎫 Demo (15 Sn): **ÜCRETSİZ**")
+    st.warning("💿 Full Sürüm (MP3): **50 TL**")
+    
+    btn_olustur = st.button("✨ Şarkıyı Üret (Demo)", use_container_width=True)
 
 with col2:
-    st.subheader("2. Üretim Paneli")
+    st.subheader("🎧 Dinleme & Satın Alma")
     
-    if btn and konu:
-        with st.spinner("AI besteliyor..."):
+    if btn_olustur and konu:
+        with st.spinner("Yapay Zeka sözleri yazıyor ve demoyu hazırlıyor..."):
             try:
-                istek = f"Topic: {konu}. Style: {tur}. Vocals: {vokal}. Tempo: {hiz}. Structure: [Verse], [Chorus]. Output: Lyrics and tags."
-                cevap = model.generate_content(istek)
-                metin = cevap.text
+                # 1. Söz Üretimi
+                prompt = f"Write a Turkish song about {konu}. Style: {tur}. Output: Only Lyrics. Structure: [Chorus], [Verse]."
+                res = model.generate_content(prompt)
+                sozler = res.text
                 
-                st.success("✅ Eser Hazır!")
-                st.code(metin, language="markdown")
+                # SİMÜLASYON: Gerçek Suno entegrasyonu için GoAPI gereklidir.
+                # Şimdilik kullanıcıya sistemin çalıştığını hissettiriyoruz.
+                time.sleep(3) 
                 
-                # İndirme ve Link Butonları
-                st.download_button(label="💾 Kaydet", data=metin, file_name="beste.txt", use_container_width=True)
-                st.link_button("🚀 Suno'ya Git", "https://suno.com/create", use_container_width=True)
-            
+                st.success("✅ Demo Hazırlandı!")
+                
+                # 2. Demo Oynatıcı (Buraya örnek bir ses dosyası koyuyoruz, gerçek sistemde API'den gelen link olacak)
+                # Buraya gerçek bir 15 saniyelik MP3 URL'si koyarsan o çalar.
+                st.audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", format="audio/mp3", start_time=0, end_time=15)
+                st.caption("⚠️ Şu an sadece 15 saniyelik önizleme (Demo) dinliyorsunuz.")
+                
+                # 3. Sözleri Göster (Blur efektli - Merak uyandırmak için)
+                with st.expander("📜 Şarkı Sözlerini Gör"):
+                    st.code(sozler)
+
+                st.markdown("---")
+                
+                # 4. ÖDEME DUVARI (PAYWALL) 🚧
+                st.error("🔒 Şarkının Tamamına Erişmek İçin Kilidi Açın")
+                
+                # WHATSAPP SİPARİŞ LİNKİ
+                # Mesajı otomatik oluşturuyoruz
+                wp_mesaj = f"Merhaba, SongAI üzerinden bir şarkı tasarladım. Konu: {konu}, Tarz: {tur}. Tamamını satın almak istiyorum."
+                wp_link = f"https://wa.me/905510236145?text={wp_mesaj.replace(' ', '%20')}"
+                
+                c_pay1, c_pay2 = st.columns(2)
+                with c_pay1:
+                     st.link_button("🔓 KİLİDİ AÇ (50 TL)", wp_link, use_container_width=True, type="primary")
+                with c_pay2:
+                     st.caption("Butona bastığınızda WhatsApp üzerinden IBAN iletilecek ve şarkının tamamı size gönderilecektir.")
+
+                # Reklam
+                st.markdown(google_ads_html, unsafe_allow_html=True)
+
             except Exception as e:
                 st.error(f"Hata: {e}")
-    else:
-        st.info("👈 Ayarları yapıp butona basın.")
-
-# Kod Sonu - Burayı da kopyaladığınızdan emin olun
-
-
+                
+    elif not btn_olustur:
+        st.info("👈 Soldan tasarımını yap, ücretsiz demonu hemen dinle!")
+        # Boşken de reklam gösterelim, para kaçmasın
+        st.markdown(google_ads_html, unsafe_allow_html=True)
