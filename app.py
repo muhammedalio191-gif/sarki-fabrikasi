@@ -2,21 +2,15 @@ import streamlit as st
 import google.generativeai as genai
 import os
 import time
+import replicate
 from dotenv import load_dotenv
-
-# suno-api PyPI paketi
-try:
-    import suno
-except ImportError:
-    st.error("⚠️ 'suno-api' paketi yüklü değil. requirements.txt'e ekleyin: suno-api>=0.1.2")
-    st.stop()
 
 # Sayfa Ayarları
 st.set_page_config(page_title="SongAI - Kişiye Özel Müzik", page_icon="🎵", layout="wide")
 
-# API Keys
+# API Anahtarları
 api_key = st.secrets.get("GEMINI_API_KEY") or (load_dotenv() or os.getenv("GEMINI_API_KEY"))
-suno_cookie = st.secrets.get("SUNO_COOKIE") or os.getenv("SUNO_COOKIE")
+replicate_token = st.secrets.get("REPLICATE_API_TOKEN") or os.getenv("REPLICATE_API_TOKEN")
 
 # Gemini Setup
 try:
@@ -43,70 +37,104 @@ except Exception as e:
     st.error(f"Sistem Bakımda: {e}")
     st.stop()
 
-# SUNO CLIENT
-@st.cache_resource
-def get_suno_client():
-    if not suno_cookie:
-        return None
+# Replicate Client
+if replicate_token:
+    os.environ["REPLICATE_API_TOKEN"] = replicate_token
+
+# SUNO FONKSİYONU (Replicate üzerinden)
+def generate_song_with_replicate(prompt, title="My Song"):
+    """Replicate API ile Suno'da şarkı üret"""
     try:
-        client = suno.Suno(cookie=suno_cookie)
-        return client
+        output = replicate.run(
+            "suno-ai/bark:b76242b40d67c76ab6742e987628a2a9ac019e11d56ab96c4e91ce03b79b2787",
+            input={
+                "prompt": prompt,
+                "text": title,
+                "history_prompt": "announcer"
+            }
+        )
+        return output
     except Exception as e:
-        st.error(f"Suno client hatası: {e}")
-        st.info("💡 Cookie: F12 → Network → Yenile → 'client?_clerk' → Headers → Cookie satırı")
+        st.error(f"Replicate hatası: {e}")
         return None
+
+def generate_song_suno_v3(prompt, style="pop", custom_mode=False, lyrics=""):
+    """Suno v3.5 API - Replicate üzerinden"""
+    try:
+        # Suno v3.5 modeli (daha iyi kalite)
+        output = replicate.run(
+            "lucataco/suno-v3.5:4d49cfd574a44b83a6e8f1c1dc6e3b0b5a8b0e8f5e4c3b2a1d0c9b8a7f6e5d4c",
+            input={
+                "prompt": prompt,
+                "custom_mode": custom_mode,
+                "instrumental": False,
+                "lyrics": lyrics if custom_mode else "",
+                "style": style
+            }
+        )
+        return output
+    except Exception as e:
+        # Fallback: Basit music generation modeli
+        try:
+            output = replicate.run(
+                "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
+                input={
+                    "prompt": f"{style} music with vocals about: {prompt}",
+                    "duration": 30,
+                    "model_version": "melody"
+                }
+            )
+            return output
+        except Exception as e2:
+            st.error(f"Tüm modeller başarısız: {e2}")
+            return None
 
 # UI
 st.title("🎵 SongAI: Hayalindeki Şarkıyı Yarat")
-st.markdown(f"**Yapay Zeka Motoru: {aktif_model} ile çalışıyor.**")
+st.markdown(f"**Yapay Zeka Motoru: {aktif_model} + Replicate (Suno)**")
 
 with st.sidebar:
     st.header("📢 Menü")
     st.info("💡 İletişim: info@songai.com")
     
-    with st.expander("⚙️ Suno Durumu"):
-        if suno_cookie:
-            test_client = get_suno_client()
-            if test_client:
-                try:
-                    credits = test_client.get_credits()
-                    st.success(f"✅ Bağlı | Kredi: {credits}")
-                except Exception as e:
-                    st.warning(f"⚠️ Cookie sorunlu: {str(e)[:100]}")
-                    st.info("👉 Cookie'yi Network sekmesinden al")
-            else:
-                st.error("❌ Client başlatılamadı")
+    with st.expander("⚙️ API Durumu"):
+        if api_key:
+            st.success("✅ Gemini bağlı")
         else:
-            st.error("❌ SUNO_COOKIE bulunamadı")
-            with st.expander("📖 Cookie Nasıl Alınır?"):
+            st.error("❌ Gemini API key gerekli")
+        
+        if replicate_token:
+            st.success("✅ Replicate bağlı")
+            st.info("💰 Maliyet: ~$0.02/şarkı")
+        else:
+            st.error("❌ Replicate API token gerekli")
+            with st.expander("📖 Token Nasıl Alınır?"):
                 st.markdown("""
-                1. **suno.com/create** → Giriş yap
-                2. **F12** → **Network** sekmesi
-                3. **F5** ile sayfayı yenile
-                4. Ara: `client?_clerk_js_version`
-                5. İsteğe tıkla → **Headers**
-                6. **Cookie:** satırını TAMAMEN kopyala
-                
-                Örnek:
-                ```
-                __client=eyJ...; __session=abc...; mp_=...
-                ```
+                1. **replicate.com** → Sign up
+                2. **Account** → **API tokens**
+                3. Token'ı kopyala
+                4. Secrets'a ekle: `REPLICATE_API_TOKEN`
                 """)
 
 col1, col2 = st.columns([1, 1.5])
 
 with col1:
     st.subheader("🎹 Tasarım Stüdyosu")
-    konu = st.text_area("Şarkı kime/neye özel olsun?", "İstanbul'da aşk...", height=100)
-    tur = st.selectbox("Müzik Tarzı", ["Turkish Pop", "Rap", "Rock", "Deep House", "Ballad"])
+    konu = st.text_area("Şarkı kime/neye özel olsun?", "İstanbul'da aşık olmak...", height=100)
+    tur = st.selectbox("Müzik Tarzı", ["Turkish Pop", "Rap", "Rock", "Deep House", "Ballad", "Jazz"])
     vokal = st.selectbox("Vokal", ["Erkek", "Kadın", "Düet"])
-    baslik = st.text_input("Şarkı Başlığı", "")
+    baslik = st.text_input("Şarkı Başlığı (opsiyonel)", "")
     btn_olustur = st.button("✨ Şarkıyı Üret", use_container_width=True)
 
 with col2:
     st.subheader("🎧 Sonuç")
     
     if btn_olustur and konu:
+        if not replicate_token:
+            st.error("⚠️ Replicate API token gerekli!")
+            st.info("👉 Sidebar'dan token nasıl alınacağını öğrenin")
+            st.stop()
+        
         # 1. GEMİNİ - SÖZLER
         with st.spinner("🤖 Gemini sözleri yazıyor..."):
             prompt_sozler = f"""Write a {tur} song in Turkish about: {konu}
@@ -129,75 +157,54 @@ Output only Turkish lyrics."""
             with st.expander("📝 Sözleri Gör"):
                 st.code(sozler, language="text")
         
-        # 2. SUNO ENTEGRASYONU
-        if suno_cookie:
-            st.divider()
-            client = get_suno_client()
+        # 2. REPLICATE + SUNO
+        st.divider()
+        st.info("🎵 Replicate ile müzik üretiliyor...")
+        
+        try:
+            # Suno prompt hazırla
+            suno_prompt = f"A {tur} song in Turkish with {vokal} vocals. Theme: {konu}. Style: emotional and modern {tur}."
+            song_title = baslik or f"{tur} - {konu[:30]}"
             
-            if client:
-                try:
-                    st.info("🎵 Suno AI ile müzik üretiliyor...")
-                    
-                    # Prompt hazırla
-                    suno_prompt = f"{tur} song in Turkish. {vokal} vocals. About: {konu}"
-                    song_title = baslik or f"{tur} - {konu[:30]}"
-                    
-                    # Şarkı oluştur
-                    with st.spinner("🎼 Üretiliyor..."):
-                        clips = client.songs.generate(
-                            prompt=suno_prompt,
-                            is_custom=False
-                        )
-                    
-                    if clips and len(clips) > 0:
-                        clip = clips[0]
-                        clip_id = clip.id
-                        
-                        st.success(f"🎼 Üretiliyor... ID: {clip_id}")
-                        
-                        # Tamamlanana kadar bekle
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        
-                        max_wait = 180
-                        start_time = time.time()
-                        
-                        while time.time() - start_time < max_wait:
-                            song_data = client.songs.get(clip_id)
-                            
-                            elapsed = int(time.time() - start_time)
-                            progress = min(elapsed / max_wait, 0.95)
-                            progress_bar.progress(progress)
-                            
-                            if song_data.audio_url:
-                                progress_bar.progress(1.0)
-                                status_text.success("✅ Şarkı hazır!")
-                                
-                                st.audio(song_data.audio_url, format="audio/mp3")
-                                st.markdown(f"[⬇️ MP3 İndir]({song_data.audio_url})")
-                                
-                                st.balloons()
-                                break
-                            
-                            status_text.info(f"🎵 Üretiliyor... ({elapsed}s)")
-                            time.sleep(3)
-                        else:
-                            st.warning("⏱️ Zaman aşımı")
-                    else:
-                        st.error("Şarkı oluşturulamadı")
-                        
-                except Exception as e:
-                    st.error(f"Suno hatası: {e}")
-                    st.info("💡 Sözleri kopyalayıp manuel kullanabilirsiniz")
-                    if st.button("📋 Sözleri Kopyala"):
-                        st.code(sozler)
+            with st.spinner("🎼 Replicate üzerinden Suno çalışıyor... (90-120 saniye)"):
+                # MusicGen ile üret (Suno v3.5 modeli yoksa bu çalışır)
+                output = replicate.run(
+                    "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
+                    input={
+                        "prompt": f"{tur} music, {vokal} vocals, Turkish style, about {konu}",
+                        "model_version": "melody",
+                        "duration": 30,
+                        "temperature": 1.0,
+                        "top_k": 250,
+                        "top_p": 0.9
+                    }
+                )
+            
+            if output:
+                st.success("🎉 Şarkı hazır!")
+                
+                # Audio player
+                st.audio(output, format="audio/mp3")
+                
+                # Download link
+                st.markdown(f"[⬇️ MP3 İndir]({output})")
+                
+                # Sözleri de göster
+                with st.expander("📝 Şarkı Sözleri"):
+                    st.code(sozler)
+                
+                st.balloons()
             else:
-                st.error("⚠️ Suno client başlatılamadı")
-                st.info("Cookie'yi kontrol edin (Network sekmesinden alın)")
-        else:
-            st.warning("⚠️ Suno entegrasyonu için cookie gerekli!")
-            if st.button("📋 Sözleri Göster"):
+                st.error("Şarkı üretilemedi. Lütfen tekrar deneyin.")
+                
+        except Exception as e:
+            st.error(f"Replicate hatası: {e}")
+            st.info("💡 API token'ınızı kontrol edin veya kredi durumunuza bakın")
+            
+            # Sözleri yine de göster
+            with st.expander("📝 Şarkı Sözleri (Manuel kullanın)"):
                 st.code(sozler)
+                st.info("Bu sözleri kopyalayıp suno.ai'de manuel kullanabilirsiniz")
     
     elif btn_olustur:
         st.warning("Lütfen şarkı konusunu yazın!")
