@@ -2,7 +2,8 @@ import streamlit as st
 import google.generativeai as genai
 import os
 import time
-import replicate
+import requests
+import json
 from dotenv import load_dotenv
 
 # Sayfa Ayarları
@@ -10,7 +11,7 @@ st.set_page_config(page_title="SongAI - Kişiye Özel Müzik", page_icon="🎵",
 
 # API Anahtarları
 api_key = st.secrets.get("GEMINI_API_KEY") or (load_dotenv() or os.getenv("GEMINI_API_KEY"))
-replicate_token = st.secrets.get("REPLICATE_API_TOKEN") or os.getenv("REPLICATE_API_TOKEN")
+hf_token = st.secrets.get("HUGGINGFACE_API_TOKEN") or os.getenv("HUGGINGFACE_API_TOKEN")
 
 # Gemini Setup
 try:
@@ -37,61 +38,60 @@ except Exception as e:
     st.error(f"Sistem Bakımda: {e}")
     st.stop()
 
-# Replicate Client
-if replicate_token:
-    os.environ["REPLICATE_API_TOKEN"] = replicate_token
-
-# SUNO FONKSİYONU (Replicate üzerinden)
-def generate_song_with_replicate(prompt, title="My Song"):
-    """Replicate API ile Suno'da şarkı üret"""
-    try:
-        output = replicate.run(
-            "suno-ai/bark:b76242b40d67c76ab6742e987628a2a9ac019e11d56ab96c4e91ce03b79b2787",
-            input={
-                "prompt": prompt,
-                "text": title,
-                "history_prompt": "announcer"
-            }
-        )
-        return output
-    except Exception as e:
-        st.error(f"Replicate hatası: {e}")
-        return None
-
-def generate_song_suno_v3(prompt, style="pop", custom_mode=False, lyrics=""):
-    """Suno v3.5 API - Replicate üzerinden"""
-    try:
-        # Suno v3.5 modeli (daha iyi kalite)
-        output = replicate.run(
-            "lucataco/suno-v3.5:4d49cfd574a44b83a6e8f1c1dc6e3b0b5a8b0e8f5e4c3b2a1d0c9b8a7f6e5d4c",
-            input={
-                "prompt": prompt,
-                "custom_mode": custom_mode,
-                "instrumental": False,
-                "lyrics": lyrics if custom_mode else "",
-                "style": style
-            }
-        )
-        return output
-    except Exception as e:
-        # Fallback: Basit music generation modeli
+# HUGGING FACE MUSİC GENERATION
+def generate_music_hf(prompt, duration=30):
+    """Hugging Face MusicGen ile müzik üret"""
+    
+    # Model seçenekleri (sırası önemli - en iyiden başla)
+    models = [
+        "facebook/musicgen-large",  # En iyi kalite
+        "facebook/musicgen-medium", # Orta kalite, hızlı
+        "facebook/musicgen-small"   # Düşük kalite, çok hızlı
+    ]
+    
+    headers = {}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
+    
+    for model_name in models:
         try:
-            output = replicate.run(
-                "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
-                input={
-                    "prompt": f"{style} music with vocals about: {prompt}",
-                    "duration": 30,
-                    "model_version": "melody"
+            API_URL = f"https://api-inference.huggingface.co/models/{model_name}"
+            
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "duration": duration,
+                    "temperature": 1.0,
+                    "top_k": 250
                 }
+            }
+            
+            response = requests.post(
+                API_URL, 
+                headers=headers, 
+                json=payload,
+                timeout=180
             )
-            return output
-        except Exception as e2:
-            st.error(f"Tüm modeller başarısız: {e2}")
-            return None
+            
+            if response.status_code == 200:
+                return response.content, model_name
+            elif response.status_code == 503:
+                # Model yükleniyor, bekle
+                st.info(f"⏳ {model_name} yükleniyor, alternatif model deneniyor...")
+                continue
+            else:
+                st.warning(f"⚠️ {model_name}: {response.status_code}")
+                continue
+                
+        except Exception as e:
+            st.warning(f"Model hatası: {model_name}")
+            continue
+    
+    return None, None
 
 # UI
 st.title("🎵 SongAI: Hayalindeki Şarkıyı Yarat")
-st.markdown(f"**Yapay Zeka Motoru: {aktif_model} + Replicate (Suno)**")
+st.markdown(f"**Yapay Zeka Motoru: {aktif_model} + Hugging Face MusicGen**")
 
 with st.sidebar:
     st.header("📢 Menü")
@@ -103,37 +103,44 @@ with st.sidebar:
         else:
             st.error("❌ Gemini API key gerekli")
         
-        if replicate_token:
-            st.success("✅ Replicate bağlı")
-            st.info("💰 Maliyet: ~$0.02/şarkı")
+        st.success("✅ Hugging Face bağlı (ÜCRETSIZ)")
+        
+        if hf_token:
+            st.info("🔑 HF Token aktif (daha hızlı)")
         else:
-            st.error("❌ Replicate API token gerekli")
-            with st.expander("📖 Token Nasıl Alınır?"):
+            st.warning("⚠️ HF Token yok (yavaş olabilir)")
+            with st.expander("📖 Token Nasıl Alınır? (Opsiyonel)"):
                 st.markdown("""
-                1. **replicate.com** → Sign up
-                2. **Account** → **API tokens**
-                3. Token'ı kopyala
-                4. Secrets'a ekle: `REPLICATE_API_TOKEN`
+                **Token olmadan da çalışır ama yavaştır!**
+                
+                Hızlandırmak için:
+                1. **huggingface.co** → Sign up
+                2. **Settings** → **Access Tokens**
+                3. **New token** → Kopyala
+                4. Secrets'a ekle: `HUGGINGFACE_API_TOKEN`
                 """)
+    
+    with st.expander("🎵 Ses Ayarları"):
+        duration = st.slider("Şarkı Süresi (saniye)", 10, 60, 30)
+        st.info("⚡ Daha kısa = Daha hızlı üretim")
 
 col1, col2 = st.columns([1, 1.5])
 
 with col1:
     st.subheader("🎹 Tasarım Stüdyosu")
     konu = st.text_area("Şarkı kime/neye özel olsun?", "İstanbul'da aşık olmak...", height=100)
-    tur = st.selectbox("Müzik Tarzı", ["Turkish Pop", "Rap", "Rock", "Deep House", "Ballad", "Jazz"])
+    tur = st.selectbox("Müzik Tarzı", ["Turkish Pop", "Rap", "Rock", "Deep House", "Ballad", "Jazz", "Reggae"])
     vokal = st.selectbox("Vokal", ["Erkek", "Kadın", "Düet"])
-    baslik = st.text_input("Şarkı Başlığı (opsiyonel)", "")
+    
+    # Kalite seçeneği
+    quality = st.radio("Kalite", ["Hızlı (15 sn)", "Normal (30 sn)", "Yüksek (60 sn)"], index=1)
+    
     btn_olustur = st.button("✨ Şarkıyı Üret", use_container_width=True)
 
 with col2:
     st.subheader("🎧 Sonuç")
     
     if btn_olustur and konu:
-        if not replicate_token:
-            st.error("⚠️ Replicate API token gerekli!")
-            st.info("👉 Sidebar'dan token nasıl alınacağını öğrenin")
-            st.stop()
         
         # 1. GEMİNİ - SÖZLER
         with st.spinner("🤖 Gemini sözleri yazıyor..."):
@@ -157,49 +164,56 @@ Output only Turkish lyrics."""
             with st.expander("📝 Sözleri Gör"):
                 st.code(sozler, language="text")
         
-        # 2. REPLICATE + SUNO
+        # 2. HUGGING FACE MUSİC GENERATION
         st.divider()
-        st.info("🎵 Replicate ile müzik üretiliyor...")
+        st.info("🎵 Hugging Face ile müzik üretiliyor...")
         
-        try:
-            # Suno prompt hazırla
-            suno_prompt = f"A {tur} song in Turkish with {vokal} vocals. Theme: {konu}. Style: emotional and modern {tur}."
-            song_title = baslik or f"{tur} - {konu[:30]}"
+        # Süre ayarı
+        duration_map = {
+            "Hızlı (15 sn)": 15,
+            "Normal (30 sn)": 30,
+            "Yüksek (60 sn)": 60
+        }
+        selected_duration = duration_map[quality]
+        
+        # Müzik prompt'u hazırla (İngilizce olmalı - model bunu bekliyor)
+        music_prompt = f"{tur} music, {vokal} vocals, Turkish style, emotional, modern production, about {konu}, upbeat melody"
+        
+        with st.spinner(f"🎼 MusicGen çalışıyor... ({selected_duration} saniye sürecek)"):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            with st.spinner("🎼 Replicate üzerinden Suno çalışıyor... (90-120 saniye)"):
-                # MusicGen ile üret (Suno v3.5 modeli yoksa bu çalışır)
-                output = replicate.run(
-                    "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
-                    input={
-                        "prompt": f"{tur} music, {vokal} vocals, Turkish style, about {konu}",
-                        "model_version": "melody",
-                        "duration": 30,
-                        "temperature": 1.0,
-                        "top_k": 250,
-                        "top_p": 0.9
-                    }
-                )
+            # Üretim
+            start_time = time.time()
+            audio_data, model_used = generate_music_hf(music_prompt, selected_duration)
+            elapsed = int(time.time() - start_time)
             
-            if output:
-                st.success("🎉 Şarkı hazır!")
-                
-                # Audio player
-                st.audio(output, format="audio/mp3")
-                
-                # Download link
-                st.markdown(f"[⬇️ MP3 İndir]({output})")
-                
-                # Sözleri de göster
-                with st.expander("📝 Şarkı Sözleri"):
-                    st.code(sozler)
-                
-                st.balloons()
-            else:
-                st.error("Şarkı üretilemedi. Lütfen tekrar deneyin.")
-                
-        except Exception as e:
-            st.error(f"Replicate hatası: {e}")
-            st.info("💡 API token'ınızı kontrol edin veya kredi durumunuza bakın")
+            progress_bar.progress(100)
+        
+        if audio_data:
+            st.success(f"🎉 Şarkı hazır! (Model: {model_used}, Süre: {elapsed}s)")
+            
+            # Audio player
+            st.audio(audio_data, format="audio/wav")
+            
+            # Download button
+            st.download_button(
+                label="⬇️ MP3 İndir",
+                data=audio_data,
+                file_name=f"songai_{konu[:20]}.wav",
+                mime="audio/wav"
+            )
+            
+            # Sözleri göster
+            with st.expander("📝 Şarkı Sözleri"):
+                st.code(sozler)
+                st.info("💡 Bu instrumental bir versiyondur. Sözleri vokal kaydetmek için kullanabilirsiniz.")
+            
+            st.balloons()
+            
+        else:
+            st.error("😔 Müzik üretilemedi. Lütfen tekrar deneyin.")
+            st.info("💡 Hugging Face modelleri ilk çalıştırmada yavaş olabilir (yükleniyor)")
             
             # Sözleri yine de göster
             with st.expander("📝 Şarkı Sözleri (Manuel kullanın)"):
@@ -208,3 +222,7 @@ Output only Turkish lyrics."""
     
     elif btn_olustur:
         st.warning("Lütfen şarkı konusunu yazın!")
+
+# Footer
+st.markdown("---")
+st.caption("🎵 SongAI | Gemini + Hugging Face MusicGen | Tamamen Ücretsiz")
