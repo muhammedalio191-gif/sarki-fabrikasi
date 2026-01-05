@@ -94,4 +94,34 @@ with col2:
                 
                 st.success("✅ Demo Hazırlandı!")
                 
-                # 2
+                # 2. Demo Oynatıcı (Temsili Ses)
+                st.audio("https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", format="audio/mp3", start_time=0, end_time=15)
+                st.caption("⚠️ Şu an sadece 15 saniyelik önizleme (Demo) dinliyorsunuz.")
+                
+                # 3. Sözleri Göster
+                with st.expander("📜 Şarkı Sözlerini Gör"):
+                    st.code(sozler)
+
+                st.markdown("---")
+                
+                # 4. ÖDEME DUVARI 🚧
+                st.error("🔒 Şarkının Tamamına Erişmek İçin Kilidi Açın")
+                
+                # --- WHATSAPP NUMARANI BURAYA YAZ KRALIM ---
+                telefon_no = "905510236145"  # ÖRNEK: 905321234567
+                
+                wp_mesaj = f"Merhaba, SongAI üzerinden bir şarkı tasarladım. Konu: {konu}, Tarz: {tur}. Tamamını (50 TL) satın almak istiyorum."
+                wp_link = f"https://wa.me/{telefon_no}?text={wp_mesaj.replace(' ', '%20')}"
+                
+                c_pay1, c_pay2 = st.columns(2)
+                with c_pay1:
+                     st.link_button("🔓 KİLİDİ AÇ & SATIN AL (50 TL)", wp_link, use_container_width=True, type="primary")
+                with c_pay2:
+                     st.caption("WhatsApp üzerinden sipariş verip şarkının orijinal halini hemen teslim alabilirsiniz.")
+
+            except Exception as e:
+                st.error(f"Hata oluştu: {e}")
+                
+    elif not btn_olustur:
+        st.info("👈 Soldan tasarımını yap, ücretsiz demonu hemen dinle!")
+        st.markdown(google_ads_html, unsafe_allow_html=True)
