@@ -4,11 +4,11 @@ import os
 import time
 from dotenv import load_dotenv
 
-# Suno-AI PyPI paketi (daha stabil)
+# suno-api PyPI paketi
 try:
-    from SunoAI import Client as SunoClient
+    import suno
 except ImportError:
-    st.error("⚠️ 'SunoAI' paketi yüklü değil. requirements.txt'e ekleyin: SunoAI>=0.0.5")
+    st.error("⚠️ 'suno-api' paketi yüklü değil. requirements.txt'e ekleyin: suno-api>=0.1.2")
     st.stop()
 
 # Sayfa Ayarları
@@ -49,12 +49,11 @@ def get_suno_client():
     if not suno_cookie:
         return None
     try:
-        # SunoAI PyPI paketi
-        client = SunoClient(cookie=suno_cookie)
+        client = suno.Suno(cookie=suno_cookie)
         return client
     except Exception as e:
         st.error(f"Suno client hatası: {e}")
-        st.info("💡 Cookie nasıl alınır: F12 → Network → Yenile → 'client?_clerk' → Headers → Cookie SATIRINI KOPYALA")
+        st.info("💡 Cookie: F12 → Network → Yenile → 'client?_clerk' → Headers → Cookie satırı")
         return None
 
 # UI
@@ -70,12 +69,11 @@ with st.sidebar:
             test_client = get_suno_client()
             if test_client:
                 try:
-                    # Basit test
-                    info = test_client.get_credits()
-                    st.success(f"✅ Bağlı | Kredi: {info}")
+                    credits = test_client.get_credits()
+                    st.success(f"✅ Bağlı | Kredi: {credits}")
                 except Exception as e:
                     st.warning(f"⚠️ Cookie sorunlu: {str(e)[:100]}")
-                    st.info("👉 Cookie'yi Network sekmesinden al (tüm satır)")
+                    st.info("👉 Cookie'yi Network sekmesinden al")
             else:
                 st.error("❌ Client başlatılamadı")
         else:
@@ -146,28 +144,45 @@ Output only Turkish lyrics."""
                     
                     # Şarkı oluştur
                     with st.spinner("🎼 Üretiliyor..."):
-                        result = client.songs.generate(
+                        clips = client.songs.generate(
                             prompt=suno_prompt,
-                            is_custom=False,
-                            wait_audio=True
+                            is_custom=False
                         )
                     
-                    if result and len(result) > 0:
-                        clip = result[0]
+                    if clips and len(clips) > 0:
+                        clip = clips[0]
+                        clip_id = clip.id
                         
-                        st.success(f"🎉 Şarkı hazır! ID: {clip['id']}")
+                        st.success(f"🎼 Üretiliyor... ID: {clip_id}")
                         
-                        # Ses çalıcı
-                        audio_url = clip.get('audio_url')
-                        if audio_url:
-                            st.audio(audio_url, format="audio/mp3")
+                        # Tamamlanana kadar bekle
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        max_wait = 180
+                        start_time = time.time()
+                        
+                        while time.time() - start_time < max_wait:
+                            song_data = client.songs.get(clip_id)
                             
-                            # İndirme
-                            st.markdown(f"[⬇️ MP3 İndir]({audio_url})")
+                            elapsed = int(time.time() - start_time)
+                            progress = min(elapsed / max_wait, 0.95)
+                            progress_bar.progress(progress)
                             
-                            st.balloons()
+                            if song_data.audio_url:
+                                progress_bar.progress(1.0)
+                                status_text.success("✅ Şarkı hazır!")
+                                
+                                st.audio(song_data.audio_url, format="audio/mp3")
+                                st.markdown(f"[⬇️ MP3 İndir]({song_data.audio_url})")
+                                
+                                st.balloons()
+                                break
+                            
+                            status_text.info(f"🎵 Üretiliyor... ({elapsed}s)")
+                            time.sleep(3)
                         else:
-                            st.warning("Ses henüz hazır değil, birkaç saniye bekleyin...")
+                            st.warning("⏱️ Zaman aşımı")
                     else:
                         st.error("Şarkı oluşturulamadı")
                         
